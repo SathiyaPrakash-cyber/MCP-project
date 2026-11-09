@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MCP Gateway — Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0c0f;
+    --surface: #111418;
+    --border: #1e2530;
+    --border-bright: #2a3545;
+    --text: #c8d4e0;
+    --text-dim: #5a6a7a;
+    --text-bright: #e8f0f8;
+    --accent: #00d4ff;
+    --accent-dim: #00506080;
+    --green: #00e676;
+    --red: #ff4444;
+    --yellow: #ffcc00;
+    --orange: #ff8800;
+    --mono: 'IBM Plex Mono', monospace;
+    --sans: 'IBM Plex Sans', sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 13px; }
+
+  /* Scanline overlay */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px);
+    pointer-events: none; z-index: 9999;
+  }
+
+  /* Layout */
+  .shell { display: grid; grid-template-rows: 48px 1fr; height: 100vh; }
+  .topbar {
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; padding: 0 20px; gap: 16px;
+    font-family: var(--mono); font-size: 11px;
+  }
+  .topbar-logo { color: var(--accent); font-weight: 600; font-size: 13px; letter-spacing: 0.05em; }
+  .topbar-sep { color: var(--border-bright); }
+  .topbar-title { color: var(--text-dim); }
+  .topbar-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+  .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+  .status-dot.warn { background: var(--yellow); box-shadow: 0 0 8px var(--yellow); }
+  .status-dot.err  { background: var(--red);    box-shadow: 0 0 8px var(--red); }
+
+  /* Main content */
+  .main { display: grid; grid-template-columns: 220px 1fr; overflow: hidden; }
+  .sidebar {
+    background: var(--surface); border-right: 1px solid var(--border);
+    padding: 16px 0; overflow-y: auto;
+  }
+  .nav-section { padding: 8px 16px 4px; font-family: var(--mono); font-size: 10px; color: var(--text-dim); letter-spacing: 0.1em; text-transform: uppercase; }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 16px; cursor: pointer; color: var(--text-dim);
+    font-family: var(--mono); font-size: 12px;
+    border-left: 2px solid transparent; transition: all 0.1s;
+  }
+  .nav-item:hover { color: var(--text); background: rgba(255,255,255,0.03); }
+  .nav-item.active { color: var(--accent); border-left-color: var(--accent); background: var(--accent-dim); }
+  .nav-icon { width: 14px; text-align: center; font-size: 11px; }
+
+  /* Content area */
+  .content { overflow-y: auto; padding: 20px; }
+
+  /* Panels */
+  .page { display: none; }
+  .page.active { display: block; }
+  .page-title { font-family: var(--mono); font-size: 16px; color: var(--text-bright); margin-bottom: 20px; font-weight: 600; }
+
+  /* Cards */
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 4px; padding: 16px; margin-bottom: 16px;
+  }
+  .card-title { font-family: var(--mono); font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 12px; }
+
+  /* Stat grid */
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .stat {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 4px; padding: 14px 16px;
+  }
+  .stat-label { font-family: var(--mono); font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; }
+  .stat-value { font-family: var(--mono); font-size: 24px; font-weight: 600; color: var(--text-bright); }
+  .stat-value.green { color: var(--green); }
+  .stat-value.red   { color: var(--red); }
+  .stat-value.accent { color: var(--accent); }
+  .stat-sub { font-family: var(--mono); font-size: 10px; color: var(--text-dim); margin-top: 4px; }
+
+  /* Table */
+  .tbl { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 11px; }
+  .tbl th { text-align: left; padding: 6px 10px; color: var(--text-dim); border-bottom: 1px solid var(--border); font-weight: 400; text-transform: uppercase; letter-spacing: 0.08em; font-size: 10px; }
+  .tbl td { padding: 7px 10px; border-bottom: 1px solid var(--border); color: var(--text); vertical-align: middle; }
+  .tbl tr:last-child td { border-bottom: none; }
+  .tbl tr:hover td { background: rgba(255,255,255,0.02); }
+
+  /* Badges */
+  .badge {
+    display: inline-block; padding: 2px 7px; border-radius: 2px;
+    font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: 0.05em;
+  }
+  .badge-allow  { background: rgba(0,230,118,0.12); color: var(--green); }
+  .badge-deny   { background: rgba(255,68,68,0.12);  color: var(--red); }
+  .badge-active { background: rgba(0,212,255,0.12); color: var(--accent); }
+  .badge-inactive { background: rgba(90,106,122,0.12); color: var(--text-dim); }
+
+  /* Buttons */
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 14px; border-radius: 3px; cursor: pointer;
+    font-family: var(--mono); font-size: 11px; font-weight: 600;
+    border: 1px solid; transition: all 0.15s; text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .btn-primary { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+  .btn-primary:hover { background: rgba(0,212,255,0.2); }
+  .btn-danger  { background: rgba(255,68,68,0.1); border-color: var(--red); color: var(--red); }
+  .btn-danger:hover  { background: rgba(255,68,68,0.2); }
+  .btn-ghost   { background: transparent; border-color: var(--border-bright); color: var(--text-dim); }
+  .btn-ghost:hover   { color: var(--text); border-color: var(--text-dim); }
+  .btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+
+  /* Token input */
+  .token-bar {
+    display: flex; gap: 8px; margin-bottom: 20px; align-items: center;
+  }
+  .token-input {
+    flex: 1; background: var(--surface); border: 1px solid var(--border);
+    color: var(--text); font-family: var(--mono); font-size: 11px;
+    padding: 8px 12px; border-radius: 3px; outline: none;
+  }
+  .token-input:focus { border-color: var(--accent); }
+  .token-input::placeholder { color: var(--text-dim); }
+
+  /* Log stream */
+  .log-stream {
+    background: #060810; border: 1px solid var(--border);
+    border-radius: 4px; padding: 12px; height: 280px;
+    overflow-y: auto; font-family: var(--mono); font-size: 11px;
+    line-height: 1.7;
+  }
+  .log-line { display: flex; gap: 12px; }
+  .log-ts { color: var(--text-dim); flex-shrink: 0; }
+  .log-allow { color: var(--green); }
+  .log-deny  { color: var(--red); }
+  .log-info  { color: var(--accent); }
+
+  /* Policy editor */
+  .rego-editor {
+    width: 100%; background: #060810; border: 1px solid var(--border);
+    color: #a8d8a8; font-family: var(--mono); font-size: 11px;
+    padding: 12px; border-radius: 3px; outline: none; resize: vertical;
+    min-height: 300px; line-height: 1.6;
+  }
+  .rego-editor:focus { border-color: var(--accent); }
+
+  /* Input */
+  .field-label { font-family: var(--mono); font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; }
+  .field-input {
+    width: 100%; background: var(--surface); border: 1px solid var(--border);
+    color: var(--text); font-family: var(--mono); font-size: 12px;
+    padding: 8px 12px; border-radius: 3px; outline: none; margin-bottom: 12px;
+  }
+  .field-input:focus { border-color: var(--accent); }
+
+  /* Notification */
+  .notif {
+    padding: 10px 14px; border-radius: 3px; margin-bottom: 12px;
+    font-family: var(--mono); font-size: 11px; display: none;
+  }
+  .notif.show { display: block; }
+  .notif.ok  { background: rgba(0,230,118,0.1); border: 1px solid var(--green); color: var(--green); }
+  .notif.err { background: rgba(255,68,68,0.1);  border: 1px solid var(--red);   color: var(--red); }
+
+  /* Charts */
+  .bar-chart { display: flex; flex-direction: column; gap: 6px; }
+  .bar-row { display: flex; align-items: center; gap: 10px; }
+  .bar-label { font-family: var(--mono); font-size: 10px; color: var(--text-dim); width: 80px; flex-shrink: 0; text-align: right; }
+  .bar-track { flex: 1; height: 14px; background: rgba(255,255,255,0.04); border-radius: 2px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 2px; transition: width 0.6s ease; }
+  .bar-val { font-family: var(--mono); font-size: 10px; color: var(--text-dim); width: 50px; flex-shrink: 0; }
+
+  /* Refresh indicator */
+  .refresh-ts { font-family: var(--mono); font-size: 10px; color: var(--text-dim); }
+  .spinning { animation: spin 1s linear infinite; display: inline-block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media(max-width:900px) { .two-col { grid-template-columns: 1fr; } }
+  .spacer { height: 8px; }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- Top bar -->
+  <div class="topbar">
+    <span class="topbar-logo">MCP//GATEWAY</span>
+    <span class="topbar-sep">|</span>
+    <span class="topbar-title">Policy-Based Access Control</span>
+    <div class="topbar-right">
+      <div id="opa-dot" class="status-dot"></div>
+      <span id="opa-status" style="font-family:var(--mono);font-size:10px;color:var(--text-dim)">OPA: checking…</span>
+      <span class="topbar-sep">|</span>
+      <span class="refresh-ts" id="last-refresh">–</span>
+    </div>
+  </div>
+
+  <div class="main">
+    <!-- Sidebar -->
+    <div class="sidebar">
+      <div class="nav-section">Monitor</div>
+      <div class="nav-item active" onclick="nav('overview')"><span class="nav-icon">◈</span> Overview</div>
+      <div class="nav-item" onclick="nav('audit')"><span class="nav-icon">▤</span> Audit Log</div>
+      <div class="nav-section">Policy</div>
+      <div class="nav-item" onclick="nav('versions')"><span class="nav-icon">⦿</span> Versions</div>
+      <div class="nav-item" onclick="nav('editor')"><span class="nav-icon">✎</span> Policy Editor</div>
+      <div class="nav-section">Security</div>
+      <div class="nav-item" onclick="nav('attacks')"><span class="nav-icon">⚡</span> Attack Stats</div>
+      <div class="nav-item" onclick="nav('latency')"><span class="nav-icon">◷</span> Latency</div>
+      <div class="nav-section">Config</div>
+      <div class="nav-item" onclick="nav('token')"><span class="nav-icon">⚷</span> Auth Token</div>
+    </div>
+
+    <!-- Content -->
+    <div class="content">
+
+      <!-- TOKEN SETUP -->
+      <div class="token-bar">
+        <input class="token-input" id="admin-token" type="password"
+               placeholder="Paste admin JWT token here…"
+               oninput="setToken(this.value)">
+        <button class="btn btn-primary" onclick="refreshAll()">↻ Refresh</button>
+      </div>
+      <div id="global-notif" class="notif"></div>
+
+      <!-- OVERVIEW PAGE -->
+      <div class="page active" id="page-overview">
+        <div class="page-title">Overview</div>
+        <div class="stat-grid" id="overview-stats">
+          <div class="stat"><div class="stat-label">Total Requests</div><div class="stat-value accent" id="stat-total">—</div></div>
+          <div class="stat"><div class="stat-label">Allowed</div><div class="stat-value green" id="stat-allowed">—</div></div>
+          <div class="stat"><div class="stat-label">Denied</div><div class="stat-value red" id="stat-denied">—</div></div>
+          <div class="stat"><div class="stat-label">Deny Rate</div><div class="stat-value" id="stat-deny-rate">—</div></div>
+          <div class="stat"><div class="stat-label">Active Policy</div><div class="stat-value accent" id="stat-policy">—</div></div>
+          <div class="stat"><div class="stat-label">OPA Status</div><div class="stat-value green" id="stat-opa">—</div></div>
+        </div>
+        <div class="two-col">
+          <div class="card">
+            <div class="card-title">Recent Activity</div>
+            <div class="log-stream" id="log-stream"><div class="log-line log-info"><span class="log-ts">—</span><span>Waiting for token…</span></div></div>
+          </div>
+          <div class="card">
+            <div class="card-title">Top Tools Requested</div>
+            <div class="bar-chart" id="tool-chart"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- AUDIT LOG PAGE -->
+      <div class="page" id="page-audit">
+        <div class="page-title">Audit Log</div>
+        <div class="card">
+          <div class="card-title">Recent Decisions <span style="color:var(--text-dim);font-weight:400">(last 50)</span></div>
+          <table class="tbl" id="audit-table">
+            <thead><tr>
+              <th>Time</th><th>User</th><th>Role</th><th>Tool</th>
+              <th>Decision</th><th>Reason</th><th>Latency</th>
+            </tr></thead>
+            <tbody id="audit-tbody"><tr><td colspan="7" style="color:var(--text-dim);text-align:center;padding:20px">Load token and refresh</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- VERSIONS PAGE -->
+      <div class="page" id="page-versions">
+        <div class="page-title">Policy Versions</div>
+        <div id="versions-notif" class="notif"></div>
+        <div class="card">
+          <div class="card-title">Version History</div>
+          <table class="tbl" id="versions-table">
+            <thead><tr><th>Version</th><th>Description</th><th>Created</th><th>Author</th><th>Lines</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody id="versions-tbody"><tr><td colspan="7" style="color:var(--text-dim);text-align:center;padding:20px">Load token and refresh</td></tr></tbody>
+          </table>
+          <div class="btn-row">
+            <button class="btn btn-danger" onclick="rollback()">⟲ Rollback to Previous</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- POLICY EDITOR PAGE -->
+      <div class="page" id="page-editor">
+        <div class="page-title">Policy Editor</div>
+        <div id="editor-notif" class="notif"></div>
+        <div class="card">
+          <div class="card-title">New Policy Version</div>
+          <div class="field-label">Description</div>
+          <input class="field-input" id="policy-desc" placeholder="e.g. Add read_only access to saas.webhook">
+          <div class="field-label">Rego Policy</div>
+          <textarea class="rego-editor" id="policy-text" placeholder="package mcp_gateway.authz&#10;&#10;default allow = false&#10;&#10;# paste your Rego policy here…"></textarea>
+          <div class="btn-row">
+            <button class="btn btn-primary" onclick="uploadPolicy(false)">⬆ Upload (store only)</button>
+            <button class="btn btn-primary" onclick="uploadPolicy(true)">⚡ Upload + Activate Now</button>
+            <button class="btn btn-ghost" onclick="loadActivePolicy()">⬇ Load Active Policy</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ATTACK STATS PAGE -->
+      <div class="page" id="page-attacks">
+        <div class="page-title">Attack Statistics</div>
+        <div class="stat-grid">
+          <div class="stat"><div class="stat-label">Total Attack Attempts</div><div class="stat-value red" id="atk-total">81</div><div class="stat-sub">Phase 2 simulation</div></div>
+          <div class="stat"><div class="stat-label">Detected / Blocked</div><div class="stat-value green" id="atk-detected">81</div></div>
+          <div class="stat"><div class="stat-label">Detection Rate</div><div class="stat-value green" id="atk-rate">100%</div></div>
+          <div class="stat"><div class="stat-label">Missed</div><div class="stat-value" id="atk-missed">0</div></div>
+        </div>
+        <div class="card">
+          <div class="card-title">By Attack Class</div>
+          <table class="tbl">
+            <thead><tr><th>Attack Class</th><th>Attempts</th><th>Detected</th><th>Rate</th><th>Avg Latency</th></tr></thead>
+            <tbody>
+              <tr><td>Privilege Escalation</td><td>19</td><td>19</td><td><span class="badge badge-allow">100%</span></td><td>19.9ms</td></tr>
+              <tr><td>Tool Poisoning</td><td>19</td><td>19</td><td><span class="badge badge-allow">100%</span></td><td>18.6ms</td></tr>
+              <tr><td>Rug Pull / Confused Deputy</td><td>19</td><td>19</td><td><span class="badge badge-allow">100%</span></td><td>24.1ms</td></tr>
+              <tr><td>Auth Bypass (incl. alg=none)</td><td>5</td><td>5</td><td><span class="badge badge-allow">100%</span></td><td>2.3ms</td></tr>
+              <tr><td>ABAC Context Bypass</td><td>19</td><td>19</td><td><span class="badge badge-allow">100%</span></td><td>15.9ms</td></tr>
+              <tr style="font-weight:600"><td>TOTAL</td><td>81</td><td>81</td><td><span class="badge badge-allow">100%</span></td><td>16.2ms avg</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- LATENCY PAGE -->
+      <div class="page" id="page-latency">
+        <div class="page-title">Latency Benchmark — RQ1</div>
+        <div class="stat-grid">
+          <div class="stat"><div class="stat-label">OPA Latency (c=1)</div><div class="stat-value green">0.23ms</div><div class="stat-sub">4-worker deployment</div></div>
+          <div class="stat"><div class="stat-label">OPA Latency (c=100)</div><div class="stat-value green">1.40ms</div><div class="stat-sub">Well under 50ms SLA</div></div>
+          <div class="stat"><div class="stat-label">SLA Target</div><div class="stat-value accent">50ms</div><div class="stat-sub">Policy decision</div></div>
+          <div class="stat"><div class="stat-label">SLA Pass (c≤10)</div><div class="stat-value green">100%</div><div class="stat-sub">All paths</div></div>
+        </div>
+        <div class="two-col">
+          <div class="card">
+            <div class="card-title">ALLOW Path — End-to-End Latency (4 workers)</div>
+            <div class="bar-chart" id="latency-chart"></div>
+          </div>
+          <div class="card">
+            <div class="card-title">OPA Policy Decision Latency</div>
+            <div class="bar-chart" id="opa-chart"></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Full Results Table (ALLOW path, 4-worker)</div>
+          <table class="tbl">
+            <thead><tr><th>Concurrency</th><th>Avg</th><th>p50</th><th>p95</th><th>p99</th><th>RPS</th><th>SLA%</th><th>OPA ms</th></tr></thead>
+            <tbody>
+              <tr><td>1</td><td>4.2ms</td><td>3.9ms</td><td>6.3ms</td><td>7.5ms</td><td>188/s</td><td><span class="badge badge-allow">100%</span></td><td>0.23ms</td></tr>
+              <tr><td>5</td><td>13.2ms</td><td>13.4ms</td><td>18.0ms</td><td>19.5ms</td><td>232/s</td><td><span class="badge badge-allow">100%</span></td><td>0.30ms</td></tr>
+              <tr><td>10</td><td>25.6ms</td><td>25.7ms</td><td>33.6ms</td><td>34.9ms</td><td>164/s</td><td><span class="badge badge-allow">100%</span></td><td>0.82ms</td></tr>
+              <tr><td>25</td><td>72.1ms</td><td>78.0ms</td><td>98.5ms</td><td>100.4ms</td><td>179/s</td><td><span class="badge badge-deny">82%</span></td><td>1.30ms</td></tr>
+              <tr><td>50</td><td>133.2ms</td><td>137.6ms</td><td>161.2ms</td><td>162.1ms</td><td>208/s</td><td><span class="badge badge-deny">0%</span></td><td>1.07ms</td></tr>
+              <tr><td>100</td><td>119.7ms</td><td>112.0ms</td><td>181.2ms</td><td>186.5ms</td><td>178/s</td><td><span class="badge badge-deny">94%</span></td><td>1.40ms</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- TOKEN PAGE -->
+      <div class="page" id="page-token">
+        <div class="page-title">Auth Token</div>
+        <div class="card">
+          <div class="card-title">How to generate an admin token</div>
+          <p style="color:var(--text-dim);font-size:12px;line-height:1.7;margin-bottom:12px">
+            Run this in your Kali terminal inside the mcp-gateway directory:
+          </p>
+          <div style="background:#060810;border:1px solid var(--border);border-radius:3px;padding:12px;font-family:var(--mono);font-size:11px;color:#a8d8a8;white-space:pre">export JWT_SECRET="mcp-gateway-dev-secret-change-in-prod-min32"
+source venv/bin/activate
+python scripts/gen_token.py --role admin</div>
+          <p style="color:var(--text-dim);font-size:12px;line-height:1.7;margin-top:12px">
+            Paste the generated token in the input bar at the top of the page, then click Refresh.
+          </p>
+        </div>
+      </div>
+
+    </div><!-- /content -->
+  </div><!-- /main -->
+</div><!-- /shell -->
+
+<script>
+const BASE = 'http://localhost:8080';
+let TOKEN = '';
+
+function setToken(t) { TOKEN = t.trim(); }
+function authHeader() { return { 'Authorization': `Bearer ${TOKEN}`, 'Content-Type': 'application/json' }; }
+
+function nav(page) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-' + page).classList.add('active');
+  event.currentTarget.classList.add('active');
+  if (TOKEN) refreshPage(page);
+}
+
+function showNotif(id, msg, type) {
+  const el = document.getElementById(id);
+  el.textContent = msg; el.className = `notif ${type} show`;
+  setTimeout(() => el.className = 'notif', 4000);
+}
+
+async function apiGet(path) {
+  const r = await fetch(BASE + path, { headers: authHeader() });
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+  return r.json();
+}
+
+async function apiPost(path, body) {
+  const r = await fetch(BASE + path, { method: 'POST', headers: authHeader(), body: JSON.stringify(body) });
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+  return r.json();
+}
+
+// ── Overview ──────────────────────────────────────────────────────────────────
+
+async function loadOverview() {
+  try {
+    const [health, metrics, audit] = await Promise.all([
+      fetch(BASE + '/health').then(r=>r.json()),
+      apiGet('/metrics'),
+      apiGet('/audit/recent?limit=20'),
+    ]);
+
+    // Stats
+    document.getElementById('stat-total').textContent   = metrics.total_requests ?? '—';
+    document.getElementById('stat-allowed').textContent = metrics.total_allowed ?? '—';
+    document.getElementById('stat-denied').textContent  = metrics.total_denied  ?? '—';
+    document.getElementById('stat-deny-rate').textContent = (metrics.deny_rate ?? '—') + '%';
+    document.getElementById('stat-opa').textContent     = health.opa === 'reachable' ? 'OK' : 'DOWN';
+
+    const opaDot = document.getElementById('opa-dot');
+    const opaStatus = document.getElementById('opa-status');
+    if (health.opa === 'reachable') {
+      opaDot.className = 'status-dot';
+      opaStatus.textContent = 'OPA: reachable';
+    } else {
+      opaDot.className = 'status-dot err';
+      opaStatus.textContent = 'OPA: DOWN';
+    }
+
+    // Active policy
+    try {
+      const status = await apiGet('/admin/status');
+      document.getElementById('stat-policy').textContent = status.policy?.active_version ?? 'none';
+    } catch(e) {
+      document.getElementById('stat-policy').textContent = 'n/a';
+    }
+
+    // Log stream
+    const stream = document.getElementById('log-stream');
+    const records = (audit.records || []).slice().reverse();
+    stream.innerHTML = records.length ? records.map(r => {
+      const t = r.timestamp_iso || '';
+      const ts = t.substring(11,19);
+      const cls = r.policy_decision === 'ALLOW' ? 'log-allow' : 'log-deny';
+      return `<div class="log-line"><span class="log-ts">${ts}</span><span class="${cls}">${r.policy_decision}</span><span style="color:var(--text-dim)"> ${r.role}</span><span> → ${r.tool_name}</span></div>`;
+    }).join('') : '<div class="log-line log-info"><span>No records yet</span></div>';
+    stream.scrollTop = stream.scrollHeight;
+
+    // Tool chart
+    const toolCounts = {};
+    (audit.records || []).forEach(r => { toolCounts[r.tool_name] = (toolCounts[r.tool_name]||0)+1; });
+    const sorted = Object.entries(toolCounts).sort((a,b)=>b[1]-a[1]).slice(0,6);
+    const max = sorted[0]?.[1] || 1;
+    const chart = document.getElementById('tool-chart');
+    chart.innerHTML = sorted.map(([tool,count]) =>
+      `<div class="bar-row">
+        <div class="bar-label">${tool.split('.')[1] || tool}</div>
+        <div class="bar-track"><div class="bar-fill" style="width:${count/max*100}%;background:var(--accent)"></div></div>
+        <div class="bar-val">${count}</div>
+      </div>`
+    ).join('') || '<div style="color:var(--text-dim);font-family:var(--mono);font-size:11px">No data yet</div>';
+
+  } catch(e) {
+    showNotif('global-notif', 'Error: ' + e.message, 'err');
+  }
+}
+
+// ── Audit ─────────────────────────────────────────────────────────────────────
+
+async function loadAudit() {
+  try {
+    const data = await apiGet('/audit/recent?limit=50');
+    const tbody = document.getElementById('audit-tbody');
+    const records = data.records || [];
+    tbody.innerHTML = records.length ? records.reverse().map(r => {
+      const cls = r.policy_decision === 'ALLOW' ? 'badge-allow' : 'badge-deny';
+      return `<tr>
+        <td>${(r.timestamp_iso||'').substring(11,19)}</td>
+        <td>${r.user_id||'—'}</td>
+        <td style="color:var(--text-dim)">${r.role||'—'}</td>
+        <td style="color:var(--accent)">${r.tool_name||'—'}</td>
+        <td><span class="badge ${cls}">${r.policy_decision}</span></td>
+        <td style="color:var(--text-dim);max-width:200px;overflow:hidden;text-overflow:ellipsis">${r.policy_reason||'—'}</td>
+        <td>${r.latency_total_ms ? r.latency_total_ms+'ms' : '—'}</td>
+      </tr>`;
+    }).join('') : '<tr><td colspan="7" style="color:var(--text-dim);text-align:center;padding:20px">No records</td></tr>';
+  } catch(e) {
+    showNotif('global-notif', 'Audit error: ' + e.message, 'err');
+  }
+}
+
+// ── Versions ──────────────────────────────────────────────────────────────────
+
+async function loadVersions() {
+  try {
+    const data = await apiGet('/admin/policies');
+    const tbody = document.getElementById('versions-tbody');
+    const versions = data.versions || [];
+    tbody.innerHTML = versions.length ? versions.map(v => {
+      const active = v.is_active;
+      return `<tr>
+        <td style="color:var(--accent)">${v.version_id}</td>
+        <td>${v.description||'—'}</td>
+        <td style="color:var(--text-dim)">${(v.created_at_iso||'').substring(0,16)}</td>
+        <td style="color:var(--text-dim)">${v.created_by||'—'}</td>
+        <td>${v.lines||'—'}</td>
+        <td><span class="badge ${active?'badge-active':'badge-inactive'}">${active?'ACTIVE':'stored'}</span></td>
+        <td>${!active ? `<button class="btn btn-ghost" style="padding:3px 8px;font-size:10px" onclick="activateVersion('${v.version_id}')">Activate</button>` : '—'}</td>
+      </tr>`;
+    }).join('') : '<tr><td colspan="7" style="color:var(--text-dim);text-align:center;padding:20px">No versions stored. Use the Policy Editor to create one.</td></tr>';
+  } catch(e) {
+    showNotif('versions-notif', 'Error: ' + e.message, 'err');
+  }
+}
+
+async function activateVersion(vid) {
+  try {
+    const r = await apiPost(`/admin/policies/${vid}/activate`, {});
+    showNotif('versions-notif', `✓ ${vid} activated. OPA hot-reloaded.`, 'ok');
+    loadVersions();
+  } catch(e) {
+    showNotif('versions-notif', 'Activation failed: ' + e.message, 'err');
+  }
+}
+
+async function rollback() {
+  if (!confirm('Roll back to previous policy version?')) return;
+  try {
+    const r = await apiPost('/admin/policies/rollback', {});
+    showNotif('versions-notif', `✓ Rolled back to ${r.result?.activated}`, 'ok');
+    loadVersions();
+  } catch(e) {
+    showNotif('versions-notif', 'Rollback failed: ' + e.message, 'err');
+  }
+}
+
+// ── Policy editor ─────────────────────────────────────────────────────────────
+
+async function loadActivePolicy() {
+  try {
+    const v = await apiGet('/admin/policies/active');
+    document.getElementById('policy-text').value = v.policy_text || '';
+    document.getElementById('policy-desc').value = 'Based on ' + v.version_id;
+    showNotif('editor-notif', `Loaded ${v.version_id} into editor`, 'ok');
+  } catch(e) {
+    showNotif('editor-notif', 'Load failed: ' + e.message, 'err');
+  }
+}
+
+async function uploadPolicy(activate) {
+  const text = document.getElementById('policy-text').value.trim();
+  const desc = document.getElementById('policy-desc').value.trim();
+  if (!text) { showNotif('editor-notif', 'Policy text is empty', 'err'); return; }
+  if (!desc) { showNotif('editor-notif', 'Description required', 'err'); return; }
+  try {
+    const r = await apiPost('/admin/policies', { policy_text: text, description: desc, activate_immediately: activate });
+    const msg = activate
+      ? `✓ Created ${r.created?.version_id} and activated. OPA hot-reloaded.`
+      : `✓ Created ${r.created?.version_id} (stored, not active)`;
+    showNotif('editor-notif', msg, 'ok');
+  } catch(e) {
+    showNotif('editor-notif', 'Upload failed: ' + e.message, 'err');
+  }
+}
+
+// ── Latency charts ────────────────────────────────────────────────────────────
+
+function buildLatencyCharts() {
+  const allowData = [
+    ['c=1',   4.2],  ['c=5',  13.2], ['c=10', 25.6],
+    ['c=25',  72.1], ['c=50', 133.2],['c=100',119.7],
+  ];
+  const opaData = [
+    ['c=1',   0.23], ['c=5',  0.30], ['c=10', 0.82],
+    ['c=25',  1.30], ['c=50', 1.07], ['c=100',1.40],
+  ];
+  const maxAllow = Math.max(...allowData.map(d=>d[1]));
+  const maxOpa   = Math.max(...opaData.map(d=>d[1]));
+
+  document.getElementById('latency-chart').innerHTML = allowData.map(([label, val]) => {
+    const sla = val < 50;
+    const color = sla ? 'var(--green)' : 'var(--orange)';
+    return `<div class="bar-row">
+      <div class="bar-label">${label}</div>
+      <div class="bar-track"><div class="bar-fill" style="width:${val/maxAllow*100}%;background:${color}"></div></div>
+      <div class="bar-val">${val}ms${sla?'':' ✗'}</div>
+    </div>`;
+  }).join('');
+
+  document.getElementById('opa-chart').innerHTML = opaData.map(([label, val]) =>
+    `<div class="bar-row">
+      <div class="bar-label">${label}</div>
+      <div class="bar-track"><div class="bar-fill" style="width:${val/maxOpa*100}%;background:var(--accent)"></div></div>
+      <div class="bar-val">${val}ms</div>
+    </div>`
+  ).join('');
+}
+
+// ── Refresh dispatcher ────────────────────────────────────────────────────────
+
+function refreshPage(page) {
+  if (!TOKEN) { showNotif('global-notif','Paste admin token first', 'err'); return; }
+  if (page === 'overview') loadOverview();
+  if (page === 'audit')    loadAudit();
+  if (page === 'versions') loadVersions();
+}
+
+async function refreshAll() {
+  if (!TOKEN) { showNotif('global-notif','Paste admin token first', 'err'); return; }
+  document.getElementById('last-refresh').textContent = '↻';
+  const active = document.querySelector('.page.active')?.id.replace('page-','');
+  await refreshPage(active);
+  document.getElementById('last-refresh').textContent = new Date().toLocaleTimeString();
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+
+buildLatencyCharts();
+
+// Passive health check (no token needed)
+async function healthPing() {
+  try {
+    const h = await fetch(BASE + '/health').then(r=>r.json());
+    const dot = document.getElementById('opa-dot');
+    const txt = document.getElementById('opa-status');
+    if (h.opa === 'reachable') {
+      dot.className = 'status-dot';
+      txt.textContent = 'OPA: reachable';
+    } else {
+      dot.className = 'status-dot warn';
+      txt.textContent = 'OPA: degraded';
+    }
+  } catch(e) {
+    document.getElementById('opa-dot').className = 'status-dot err';
+    document.getElementById('opa-status').textContent = 'Gateway: unreachable';
+  }
+}
+healthPing();
+setInterval(healthPing, 15000);
+</script>
+</body>
+</html>

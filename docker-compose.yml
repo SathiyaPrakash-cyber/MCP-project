@@ -1,0 +1,168 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  MCP Gateway with Policy-Based Access Control — LOCAL LABORATORY STACK
+# ─────────────────────────────────────────────────────────────────────────────
+#
+#  SCOPE WARNING — READ BEFORE DEPLOYING ANYWHERE OTHER THAN A LOCAL MACHINE
+#
+#  This compose file builds the single-host experimental environment used to
+#  produce the results in the dissertation. It is NOT a production deployment
+#  and the evaluation makes no claim that it is one.
+#
+#  What is deliberately simplified here, and what it would take to change:
+#
+#    * Transport is plain HTTP between services. A real deployment would
+#      terminate TLS and use mutual TLS on the gateway-to-OPA hop.
+#    * OPA's API is unauthenticated. It is bound to loopback below so it is
+#      not reachable off-host, but anyone with shell access on this machine
+#      can read and evaluate policy. A real deployment would front OPA with
+#      authentication and restrict it to decision evaluation only.
+#    * Elasticsearch and Kibana run with X-Pack security disabled, so the
+#      audit index has no authentication. A real deployment would enable
+#      security, TLS and role-based index access.
+#    * mock-mcp-server exposes /admin/mutate_tool and /admin/reset_tools so
+#      the rug-pull experiment can change a tool definition at runtime. These
+#      now require MOCK_ADMIN_TOKEN, but the whole service is a test double
+#      and must never be exposed beyond the host.
+#    * Only the gateway's own port (8080) is published on all interfaces.
+#      Every administrative port is bound to 127.0.0.1.
+#
+#  Secrets are NOT stored in this file. Run ./scripts/bootstrap_env.sh once to
+#  generate a .env containing a random JWT_SECRET and MOCK_ADMIN_TOKEN; the
+#  stack refuses to start without them.
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  mcp-gateway:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.gateway
+    container_name: mcp-gateway
+    ports:
+      # The gateway is the only service intended to receive traffic.
+      - "${GATEWAY_BIND:-127.0.0.1}:8080:8080"
+    environment:
+      OPA_URL: "http://opa:8181"
+      UPSTREAM_DEFAULT: "http://mock-mcp-server:9000"
+      UPSTREAM_FS: "http://mock-mcp-server:9000"
+      UPSTREAM_DB: "http://mock-mcp-server:9000"
+      UPSTREAM_CODE: "http://mock-mcp-server:9000"
+      UPSTREAM_SAAS: "http://mock-mcp-server:9000"
+      # Sourced from .env — no secret is committed to the repository.
+      JWT_SECRET: "${JWT_SECRET:?JWT_SECRET is not set. Run ./scripts/bootstrap_env.sh first.}"
+      JWT_ALGORITHM: "HS256"
+      # Acknowledges that this is the lab stack. Without it the gateway
+      # refuses to start on a weak or publicly known secret.
+      MCP_GATEWAY_LAB_MODE: "${MCP_GATEWAY_LAB_MODE:-1}"
+      # Refuse to serve traffic unless a tool-schema baseline was sealed.
+      SCHEMA_PIN_REQUIRED: "${SCHEMA_PIN_REQUIRED:-1}"
+      CORS_ALLOW_ORIGINS: "${CORS_ALLOW_ORIGINS:-http://localhost:8080}"
+      LOG_DIR: "/app/logs"
+      ES_URL: "http://elasticsearch:9200"
+      ES_INDEX: "mcp-gateway-audit"
+      DISABLE_POLICY_CACHE: "0"
+    volumes:
+      - ./logs:/app/logs
+      - ./policies:/app/policies
+    depends_on:
+      opa:
+        condition: service_healthy
+      mock-mcp-server:
+        condition: service_healthy
+    networks:
+      - mcp-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  opa:
+    image: openpolicyagent/opa:0.68.0
+    container_name: opa
+    ports:
+      # Loopback only: the gateway reaches OPA over the internal network, and
+      # the published port exists solely for `opa eval` debugging on the host.
+      - "127.0.0.1:8181:8181"
+    command:
+      - "run"
+      - "--server"
+      - "--addr=0.0.0.0:8181"
+      - "--log-level=info"
+      - "--log-format=json"
+      - "/policies/mcp_gateway.rego"
+    volumes:
+      - ./policies:/policies:ro
+    networks:
+      - mcp-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/opa", "eval", "--data", "/policies/mcp_gateway.rego", "data.mcp_gateway.authz.allow"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  mock-mcp-server:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.mock
+    container_name: mock-mcp-server
+    environment:
+      # Guards /admin/mutate_tool and /admin/reset_tools, which exist only so
+      # the rug-pull experiment can mutate a tool definition at runtime.
+      MOCK_ADMIN_TOKEN: "${MOCK_ADMIN_TOKEN:?MOCK_ADMIN_TOKEN is not set. Run ./scripts/bootstrap_env.sh first.}"
+    ports:
+      # Loopback only: this is a test double, not a service.
+      - "127.0.0.1:9000:9000"
+    networks:
+      - mcp-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:9000/health')\""]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.13.0
+    container_name: elasticsearch
+    environment:
+      - discovery.type=single-node
+      # LAB ONLY. Security is disabled so the audit index can be queried
+      # without credentials during the experiment; see the scope warning above.
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms256m -Xmx256m"
+    ports:
+      - "127.0.0.1:9200:9200"
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+    networks:
+      - mcp-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200/_cluster/health"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.13.0
+    container_name: kibana
+    environment:
+      ELASTICSEARCH_HOSTS: '["http://elasticsearch:9200"]'
+    ports:
+      - "127.0.0.1:5601:5601"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - mcp-net
+    restart: unless-stopped
+
+networks:
+  mcp-net:
+    driver: bridge
+
+volumes:
+  es-data:

@@ -1,0 +1,8 @@
+concurrency,records,links_checked,prefix_broken_links,prefix_broken_pct,postfix_broken_links,postfix_broken_pct,postfix_intact
+1,2000,1999,0,0.0,0,0.0,True
+2,2000,1999,1999,100.0,0,0.0,True
+5,2000,1999,1999,100.0,0,0.0,True
+10,2000,1999,1999,100.0,0,0.0,True
+25,2000,1999,1999,100.0,0,0.0,True
+50,2000,1999,1999,100.0,0,0.0,True
+100,2000,1999,1999,100.0,0,0.0,True

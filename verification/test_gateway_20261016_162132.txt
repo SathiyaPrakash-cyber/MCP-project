@@ -1,0 +1,31 @@
+# Fresh integration-test output for the repaired source revision
+# Command: python tests/test_gateway.py
+# Run at: 2026-10-16T16:21:38.1265685+05:30
+
+
+============================================================
+  MCP Gateway Test Suite
+============================================================
+Gateway healthy: {'status': 'ok', 'opa': 'reachable', 'timestamp': 1792147894.4837933}
+
+  [PASS] No token → 401 → 401
+  [PASS] Expired token → 401 → 401
+  [PASS] Admin can call filesystem.read → 200
+  [PASS] read_only denied filesystem.write → 403 (rbac_deny: role does not permit this tool)
+  [PASS] Developer can call code.execute → 200
+  [PASS] Developer denied admin.create_user → 403
+  [PASS] Globally blocked tool denied even for admin → 403
+  [PASS] [ATTACK] Privilege escalation (database.drop as read_only) blocked → 403
+  [PASS] [ATTACK] Tool poisoning (globally blocked tool) blocked → 403
+  [PASS] [ABAC] Sensitive tool denied to developer → 403
+  [PASS] Tool list filtered for read_only: 4 tools visible, no write tools=yes
+  [PASS] Audit log: 5 records found
+  [PASS] Policy latency: avg=0.6ms max=3.7ms (SLA=50ms) over 20 requests
+
+============================================================
+  Results: 13/13 passed
+  ALL TESTS PASSED
+============================================================
+
+
+EXIT_CODE=0

@@ -1,0 +1,9 @@
+Packaging and command verification
+Date: 2026-10-18
+
+- ./scripts/bootstrap_env.sh: PASS; generated required local settings and mode-600 .env. The generated .env was removed and is excluded from the archive.
+- python -m pytest tests/ -q: PASS; 50 passed. tests/test_gateway.py is intentionally excluded from pytest collection because it is the separately run Docker integration harness.
+- python tests/official_mcp_client_smoke.py: PASS with MCP Python SDK 2.3.0; discovery, tools/list, allowed call and denied call all passed.
+- Linux unzip extraction of the rebuilt archive: PASS (exit code 0).
+- Docker/Compose integration startup: NOT RUN in this environment because Docker is unavailable.
+- The uploaded ZIP contained zero .pyc files; the rebuilt ZIP excludes .pyc, __pycache__, and .pytest_cache artifacts.

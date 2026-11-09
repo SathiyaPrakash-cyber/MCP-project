@@ -1,0 +1,13 @@
+{"log_dir": "/tmp/mcp-sdk-smoke-sob0su0p", "event": "audit_logger.initialized", "timestamp": "2026-10-18T03:45:18.847891Z", "level": "info"}
+{"upstream": "http://upstream.test", "tool": "filesystem.read", "hash": "d015bc434923", "event": "schema_pin.registered", "timestamp": "2026-10-18T03:45:18.848094Z", "level": "info"}
+{"upstream": "http://upstream.test", "tool": "filesystem.write", "hash": "aac5e7c106ef", "event": "schema_pin.registered", "timestamp": "2026-10-18T03:45:18.848128Z", "level": "info"}
+{"upstream": "http://upstream.test", "tools": 2, "event": "schema_pin.sealed", "timestamp": "2026-10-18T03:45:18.848143Z", "level": "info"}
+PASS official SDK server/discover
+PASS official SDK tools/list reflects policy
+{"request_id": "09d464a1-a6a9-49f8-a61c-911ad5d08d47", "tool": "filesystem.read", "user": "official-sdk-smoke", "role": "developer", "event": "gateway.request_received", "timestamp": "2026-10-18T03:45:18.956053Z", "level": "info"}
+{"request_id": "09d464a1-a6a9-49f8-a61c-911ad5d08d47", "tool": "filesystem.read", "user": "official-sdk-smoke", "latency_ms": 3.52, "event": "gateway.request_allowed", "timestamp": "2026-10-18T03:45:18.960469Z", "level": "info"}
+PASS official SDK allowed tools/call
+{"request_id": "0a215e8d-ec27-4826-923f-87fedfe9895b", "tool": "filesystem.write", "user": "official-sdk-smoke", "role": "developer", "event": "gateway.request_received", "timestamp": "2026-10-18T03:45:19.005871Z", "level": "info"}
+{"request_id": "0a215e8d-ec27-4826-923f-87fedfe9895b", "tool": "filesystem.write", "user": "official-sdk-smoke", "reason": "write denied by test policy", "event": "gateway.request_denied", "timestamp": "2026-10-18T03:45:19.007592Z", "level": "warning"}
+PASS official SDK policy-denied tools/call
+Official MCP Python SDK interoperability: PASS (mcp 2.3.0)
